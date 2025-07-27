@@ -10,6 +10,10 @@ usermod -a -G docker ec2-user
 # Install AWS CLI
 yum install -y aws-cli
 
+# Start and enable SSM agent
+systemctl start amazon-ssm-agent
+systemctl enable amazon-ssm-agent
+
 # Install CloudWatch agent
 yum install -y amazon-cloudwatch-agent
 
