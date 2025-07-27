@@ -14,7 +14,7 @@ public class CreditCardPayment implements PaymentStrategy {
     private String paymentIntentId;
     
     static {
-        Stripe.apiKey = "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";
+        Stripe.apiKey = "";
     }
 
     public CreditCardPayment(String cardNumber, String cvv, String expiryDate) {

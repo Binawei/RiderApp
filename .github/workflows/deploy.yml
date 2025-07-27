@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-and-deploy:
-    uses: decagon/DevOpsPipeline/.github/workflows/build-and-deploy.yml@main
+    uses: Binawei/DevOpsPipeline/.github/workflows/setup-project.yml@main
     with:
       project_name: "riderapp"
       app_type: "java-spring-boot"
