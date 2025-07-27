@@ -1,0 +1,21 @@
+name: Build and Deploy RiderApp
+
+on:
+  push:
+    branches: [main, master, develop, feature/*]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    uses: decagon/DevOpsPipeline/.github/workflows/build-and-deploy.yml@main
+    with:
+      project_name: "riderapp"
+      app_type: "java-spring-boot"
+      aws_region: "us-east-1"
+      enable_database: true
+      database_type: "postgres"
+      database_instance_class: "db.t3.micro"
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}

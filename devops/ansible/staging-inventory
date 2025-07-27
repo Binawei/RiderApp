@@ -1,0 +1,6 @@
+[staging]
+staging-1 ansible_host=10.0.1.10 ansible_user=ec2-user
+staging-2 ansible_host=10.0.1.11 ansible_user=ec2-user
+
+[staging:vars]
+environment=staging
