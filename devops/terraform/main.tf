@@ -185,9 +185,13 @@ resource "aws_iam_role_policy" "parameter_store_policy" {
         "ssm:UpdateInstanceInformation",
         "ssm:SendCommand",
         "ec2messages:*",
-        "ssmmessages:*"
+        "ssmmessages:*",
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage"
       ]
-      Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${var.project_name}/*"
+      Resource = "*"
     }]
   })
 }
@@ -228,15 +232,21 @@ resource "aws_autoscaling_group" "app" {
   name                = "${var.project_name}-asg"
   vpc_zone_identifier = aws_subnet.public[*].id
   target_group_arns   = [data.aws_lb_target_group.app.arn]
-  health_check_type   = "ELB"
+  health_check_type   = "EC2"
+  health_check_grace_period = 300
 
-  min_size         = var.min_instances
+  min_size         = 1  # Reduced for faster deployment
   max_size         = var.max_instances
-  desired_capacity = var.min_instances
+  desired_capacity = 1  # Start with 1 instance
 
   launch_template {
     id      = aws_launch_template.app.id
     version = "$Latest"
+  }
+
+  timeouts {
+    create = "15m"
+    update = "15m"
   }
 }
 
@@ -270,10 +280,12 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# Database Subnet Group (use existing)
-data "aws_db_subnet_group" "main" {
-  count = var.enable_database ? 1 : 0
-  name  = "${var.project_name}-db-subnet-group"
+# Database Subnet Group (create new in correct VPC)
+resource "aws_db_subnet_group" "main" {
+  count      = var.enable_database ? 1 : 0
+  name       = "${var.project_name}-db-subnet-group-new"
+  subnet_ids = aws_subnet.public[*].id
+  tags = { Name = "${var.project_name}-db-subnet-group-new" }
 }
 
 # Database Security Group
@@ -313,7 +325,7 @@ resource "aws_db_instance" "main" {
   password = random_password.db_password[0].result
   
   vpc_security_group_ids = [aws_security_group.database[0].id]
-  db_subnet_group_name   = data.aws_db_subnet_group.main[0].name
+  db_subnet_group_name   = aws_db_subnet_group.main[0].name
   
   backup_retention_period = 7
   backup_window          = "03:00-04:00"
