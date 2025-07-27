@@ -17,12 +17,12 @@ systemctl enable amazon-ssm-agent
 # Install CloudWatch agent
 yum install -y amazon-cloudwatch-agent
 
-# Configure Docker to use ECR
-aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_registry}
-
-# Create application diectory
+# Create application directory
 mkdir -p /opt/${project_name}
 cd /opt/${project_name}
+
+# Configure Docker to use ECR (after creating directory)
+aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_registry} || echo "ECR login failed, will retry later"
 
 # Create systemd service for the application
 cat > /etc/systemd/system/${project_name}.service << EOF
@@ -65,6 +65,8 @@ EOF
 
 chmod +x /opt/${project_name}/*.sh
 
-# Enable and start the service
+# Enable service but don't start it immediately (let deployment handle it)
 systemctl enable ${project_name}
-systemctl start ${project_name}
+
+# Signal that user data completed successfully
+echo "User data script completed successfully" > /var/log/user-data-complete.log
