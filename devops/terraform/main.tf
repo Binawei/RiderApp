@@ -234,6 +234,7 @@ resource "aws_autoscaling_group" "app" {
   target_group_arns   = [data.aws_lb_target_group.app.arn]
   health_check_type   = "EC2"
   health_check_grace_period = 300
+  wait_for_capacity_timeout = "15m"
 
   min_size         = 1  # Reduced for faster deployment
   max_size         = var.max_instances
@@ -242,11 +243,6 @@ resource "aws_autoscaling_group" "app" {
   launch_template {
     id      = aws_launch_template.app.id
     version = "$Latest"
-  }
-
-  timeouts {
-    create = "15m"
-    update = "15m"
   }
 }
 
