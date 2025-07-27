@@ -265,12 +265,27 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# Database Subnet Group (create new in correct VPC)
+# Check if DB Subnet Group exists
+data "aws_db_subnet_group" "existing_main" {
+  count = var.enable_database ? 1 : 0
+  name  = "${var.project_name}-db-subnet-group-new"
+}
+
+# Create DB Subnet Group only if it doesn't exist
 resource "aws_db_subnet_group" "main" {
-  count      = var.enable_database ? 1 : 0
+  count      = var.enable_database && length(data.aws_db_subnet_group.existing_main) == 0 ? 1 : 0
   name       = "${var.project_name}-db-subnet-group-new"
   subnet_ids = local.subnet_ids
   tags = { Name = "${var.project_name}-db-subnet-group-new" }
+}
+
+# Use existing or created DB Subnet Group
+locals {
+  db_subnet_group_name = var.enable_database ? (
+    length(data.aws_db_subnet_group.existing_main) > 0 ? 
+    data.aws_db_subnet_group.existing_main[0].name : 
+    aws_db_subnet_group.main[0].name
+  ) : null
 }
 
 # Database Security Group
@@ -310,7 +325,7 @@ resource "aws_db_instance" "main" {
   password = random_password.db_password[0].result
   
   vpc_security_group_ids = [aws_security_group.database[0].id]
-  db_subnet_group_name   = aws_db_subnet_group.main[0].name
+  db_subnet_group_name   = local.db_subnet_group_name
   
   backup_retention_period = 7
   backup_window          = "03:00-04:00"
