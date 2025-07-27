@@ -20,7 +20,7 @@ yum install -y amazon-cloudwatch-agent
 # Configure Docker to use ECR
 aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_registry}
 
-# Create application directory
+# Create application diectory
 mkdir -p /opt/${project_name}
 cd /opt/${project_name}
 
