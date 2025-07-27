@@ -203,7 +203,7 @@ resource "aws_launch_template" "app" {
   }))
 }
 
-# Create Auto Scaling Group only if it doesn't exist
+# Create Auo Scaling Group only if it doesn't exist
 resource "aws_autoscaling_group" "app" {
   count               = length(data.aws_autoscaling_group.existing_app) == 0 ? 1 : 0
   name                = "${var.project_name}-asg"
