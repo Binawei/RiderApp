@@ -309,9 +309,15 @@ resource "aws_security_group" "database" {
   }
 }
 
-# RDS Instance
-resource "aws_db_instance" "main" {
+# Check if RDS instance exists
+data "aws_db_instance" "existing_main" {
   count                  = var.enable_database ? 1 : 0
+  db_instance_identifier = "${var.project_name}-db"
+}
+
+# Create RDS Instance only if it doesn't exist
+resource "aws_db_instance" "main" {
+  count                  = var.enable_database && length(data.aws_db_instance.existing_main) == 0 ? 1 : 0
   identifier             = "${var.project_name}-db"
   engine                 = var.database_type == "postgres" ? "postgres" : "mysql"
   engine_version         = var.database_type == "postgres" ? "15.7" : "8.0"
@@ -344,26 +350,44 @@ resource "random_password" "db_password" {
   special = true
 }
 
+# Use existing or created RDS instance
+locals {
+  db_endpoint = var.enable_database ? (
+    length(data.aws_db_instance.existing_main) > 0 ? 
+    data.aws_db_instance.existing_main[0].endpoint : 
+    aws_db_instance.main[0].endpoint
+  ) : null
+  
+  db_name = var.enable_database ? (
+    length(data.aws_db_instance.existing_main) > 0 ? 
+    data.aws_db_instance.existing_main[0].db_name : 
+    aws_db_instance.main[0].db_name
+  ) : null
+}
+
 # Store DB credentials in Parameter Store
 resource "aws_ssm_parameter" "db_host" {
-  count = var.enable_database ? 1 : 0
-  name  = "/${var.project_name}/database/host"
-  type  = "String"
-  value = aws_db_instance.main[0].endpoint
+  count     = var.enable_database ? 1 : 0
+  name      = "/${var.project_name}/database/host"
+  type      = "String"
+  value     = local.db_endpoint
+  overwrite = true
 }
 
 resource "aws_ssm_parameter" "db_name" {
-  count = var.enable_database ? 1 : 0
-  name  = "/${var.project_name}/database/name"
-  type  = "String"
-  value = aws_db_instance.main[0].db_name
+  count     = var.enable_database ? 1 : 0
+  name      = "/${var.project_name}/database/name"
+  type      = "String"
+  value     = local.db_name
+  overwrite = true
 }
 
 resource "aws_ssm_parameter" "db_username" {
-  count = var.enable_database ? 1 : 0
-  name  = "/${var.project_name}/database/username"
-  type  = "String"
-  value = aws_db_instance.main[0].username
+  count     = var.enable_database ? 1 : 0
+  name      = "/${var.project_name}/database/username"
+  type      = "String"
+  value     = "dbadmin"
+  overwrite = true
 }
 
 resource "aws_ssm_parameter" "db_password" {
