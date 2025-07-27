@@ -176,8 +176,15 @@ locals {
   instance_profile_name = length(data.aws_iam_role.existing_ec2_role) > 0 ? "${var.project_name}-ec2-profile" : aws_iam_instance_profile.ec2_profile[0].name
 }
 
-# SSH Key Pair for Ansible
+# Check if SSH Key Pair exists
+data "aws_key_pair" "existing_app" {
+  count    = 1
+  key_name = "${var.project_name}-key"
+}
+
+# Create SSH Key Pair only if it doesn't exist
 resource "aws_key_pair" "app" {
+  count      = length(data.aws_key_pair.existing_app) == 0 ? 1 : 0
   key_name   = "${var.project_name}-key"
   public_key = tls_private_key.app.public_key_openssh
 }
@@ -185,6 +192,11 @@ resource "aws_key_pair" "app" {
 resource "tls_private_key" "app" {
   algorithm = "RSA"
   rsa_bits  = 4096
+}
+
+# Use existing or created key pair
+locals {
+  key_pair_name = length(data.aws_key_pair.existing_app) > 0 ? data.aws_key_pair.existing_app[0].key_name : aws_key_pair.app[0].key_name
 }
 
 # Direct EC2 instances with SSH access
@@ -195,7 +207,7 @@ resource "aws_instance" "app" {
   subnet_id              = local.subnet_ids[0]
   vpc_security_group_ids = [aws_security_group.app.id]
   iam_instance_profile   = local.instance_profile_name
-  key_name               = aws_key_pair.app.key_name
+  key_name               = local.key_pair_name
 
   user_data_base64 = base64encode(templatefile("${path.module}/user_data_simple.sh", {
     project_name = var.project_name
