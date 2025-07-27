@@ -16,6 +16,10 @@ variable "database_instance_class" {
   type    = string
   default = "db.t3.micro"
 }
+variable "skip_asg_creation" {
+  type    = bool
+  default = false
+}
 
 provider "aws" {
   region = var.aws_region
@@ -184,7 +188,7 @@ data "aws_autoscaling_group" "existing_app" {
 
 # Launch Template
 resource "aws_launch_template" "app" {
-  count         = length(data.aws_autoscaling_group.existing_app) == 0 ? 1 : 0
+  count         = !var.skip_asg_creation && length(data.aws_autoscaling_group.existing_app) == 0 ? 1 : 0
   name_prefix   = "${var.project_name}-"
   image_id      = data.aws_ami.amazon_linux.id
   instance_type = var.instance_type
@@ -203,9 +207,9 @@ resource "aws_launch_template" "app" {
   }))
 }
 
-# Create Auto Scaling Group only if it doesn't exist
+# Create Auto Scaling Group only if it doesn't exist and not skipped
 resource "aws_autoscaling_group" "app" {
-  count               = length(data.aws_autoscaling_group.existing_app) == 0 ? 1 : 0
+  count               = !var.skip_asg_creation && length(data.aws_autoscaling_group.existing_app) == 0 ? 1 : 0
   name                = "${var.project_name}-asg"
   vpc_zone_identifier = local.subnet_ids
   target_group_arns   = [data.aws_lb_target_group.app.arn]
