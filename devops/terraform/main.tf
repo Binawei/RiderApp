@@ -103,13 +103,9 @@ resource "aws_security_group" "app" {
   }
 }
 
-# Load Balancer
-resource "aws_lb" "main" {
-  name               = "${var.project_name}-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = aws_subnet.public[*].id
+# Load Balancer (use existing)
+data "aws_lb" "main" {
+  name = "${var.project_name}-alb"
 }
 
 resource "aws_security_group" "alb" {
@@ -131,39 +127,20 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# IAM Role for EC2 instances
-resource "aws_iam_role" "ec2_role" {
+# IAM Role (use existing)
+data "aws_iam_role" "ec2_role" {
   name = "${var.project_name}-ec2-role"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = { Service = "ec2.amazonaws.com" }
-    }]
-  })
 }
 
-resource "aws_iam_role_policy" "parameter_store_policy" {
+# IAM Role Policy (use existing)
+data "aws_iam_role_policy" "parameter_store_policy" {
   name = "${var.project_name}-parameter-store-policy"
-  role = aws_iam_role.ec2_role.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "ssm:GetParameter",
-        "ssm:GetParameters",
-        "ssm:GetParametersByPath"
-      ]
-      Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${var.project_name}/*"
-    }]
-  })
+  role = data.aws_iam_role.ec2_role.name
 }
 
-resource "aws_iam_instance_profile" "ec2_profile" {
+# IAM Instance Profile (use existing)
+data "aws_iam_instance_profile" "ec2_profile" {
   name = "${var.project_name}-ec2-profile"
-  role = aws_iam_role.ec2_role.name
 }
 
 # Auto Scaling Group
@@ -175,7 +152,7 @@ resource "aws_launch_template" "app" {
 
   vpc_security_group_ids = [aws_security_group.app.id]
   iam_instance_profile {
-    name = aws_iam_instance_profile.ec2_profile.name
+    name = data.aws_iam_instance_profile.ec2_profile.name
   }
 
   user_data = base64encode(templatefile("${path.module}/user_data.sh", {
@@ -190,7 +167,7 @@ resource "aws_launch_template" "app" {
 resource "aws_autoscaling_group" "app" {
   name                = "${var.project_name}-asg"
   vpc_zone_identifier = aws_subnet.public[*].id
-  target_group_arns   = [aws_lb_target_group.app.arn]
+  target_group_arns   = [data.aws_lb_target_group.app.arn]
   health_check_type   = "ELB"
 
   min_size         = var.min_instances
@@ -203,26 +180,19 @@ resource "aws_autoscaling_group" "app" {
   }
 }
 
-# Target Group
-resource "aws_lb_target_group" "app" {
-  name     = "${var.project_name}-tg"
-  port     = var.app_type == "react-frontend" ? 80 : 8080
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-
-  health_check {
-    path = var.app_type == "java-spring-boot" ? "/actuator/health" : "/health"
-  }
+# Target Group (use existing)
+data "aws_lb_target_group" "app" {
+  name = "${var.project_name}-tg"
 }
 
 resource "aws_lb_listener" "app" {
-  load_balancer_arn = aws_lb.main.arn
+  load_balancer_arn = data.aws_lb.main.arn
   port              = "80"
   protocol          = "HTTP"
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.app.arn
+    target_group_arn = data.aws_lb_target_group.app.arn
   }
 }
 
@@ -240,12 +210,10 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# Database Subnet Group
-resource "aws_db_subnet_group" "main" {
-  count      = var.enable_database ? 1 : 0
-  name       = "${var.project_name}-db-subnet-group"
-  subnet_ids = aws_subnet.public[*].id
-  tags = { Name = "${var.project_name}-db-subnet-group" }
+# Database Subnet Group (use existing)
+data "aws_db_subnet_group" "main" {
+  count = var.enable_database ? 1 : 0
+  name  = "${var.project_name}-db-subnet-group"
 }
 
 # Database Security Group
@@ -285,7 +253,7 @@ resource "aws_db_instance" "main" {
   password = random_password.db_password[0].result
   
   vpc_security_group_ids = [aws_security_group.database[0].id]
-  db_subnet_group_name   = aws_db_subnet_group.main[0].name
+  db_subnet_group_name   = data.aws_db_subnet_group.main[0].name
   
   backup_retention_period = 7
   backup_window          = "03:00-04:00"
@@ -327,15 +295,16 @@ resource "aws_ssm_parameter" "db_username" {
 }
 
 resource "aws_ssm_parameter" "db_password" {
-  count = var.enable_database ? 1 : 0
-  name  = "/${var.project_name}/database/password"
-  type  = "SecureString"
-  value = random_password.db_password[0].result
+  count     = var.enable_database ? 1 : 0
+  name      = "/${var.project_name}/database/password"
+  type      = "SecureString"
+  value     = random_password.db_password[0].result
+  overwrite = true
 }
 
 # Outputs
 output "load_balancer_dns" {
-  value = aws_lb.main.dns_name
+  value = data.aws_lb.main.dns_name
 }
 
 output "ecr_repository_url" {
