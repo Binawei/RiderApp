@@ -185,7 +185,7 @@ resource "aws_instance" "app" {
   vpc_security_group_ids = [aws_security_group.app.id]
   iam_instance_profile   = local.instance_profile_name
 
-  user_data = base64encode(templatefile("${path.module}/user_data_simple.sh", {
+  user_data_base64 = base64encode(templatefile("${path.module}/user_data_simple.sh", {
     project_name = var.project_name
     aws_region   = var.aws_region
     ecr_registry = local.ecr_repository_url
@@ -196,13 +196,7 @@ resource "aws_instance" "app" {
   }
 }
 
-# Register instance with target group
-resource "aws_lb_target_group_attachment" "app" {
-  count            = 1
-  target_group_arn = data.aws_lb_target_group.app.arn
-  target_id        = aws_instance.app[0].id
-  port             = 8080
-}
+# Target group attachment handled in workflow to avoid VPC issues
 
 # Target Group (use existing)
 data "aws_lb_target_group" "app" {
