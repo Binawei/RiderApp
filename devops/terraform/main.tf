@@ -181,7 +181,11 @@ resource "aws_iam_role_policy" "parameter_store_policy" {
       Action = [
         "ssm:GetParameter",
         "ssm:GetParameters",
-        "ssm:GetParametersByPath"
+        "ssm:GetParametersByPath",
+        "ssm:UpdateInstanceInformation",
+        "ssm:SendCommand",
+        "ec2messages:*",
+        "ssmmessages:*"
       ]
       Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${var.project_name}/*"
     }]
@@ -204,7 +208,7 @@ resource "aws_launch_template" "app" {
   name_prefix   = "${var.project_name}-"
   image_id      = data.aws_ami.amazon_linux.id
   instance_type = var.instance_type
-  key_name      = "${var.project_name}-key"
+  # key_name removed - instances will be managed via Systems Manager
 
   vpc_security_group_ids = [aws_security_group.app.id]
   iam_instance_profile {
@@ -305,7 +309,7 @@ resource "aws_db_instance" "main" {
   storage_encrypted      = true
   
   db_name  = replace(var.project_name, "-", "")
-  username = "admin"
+  username = "dbadmin"
   password = random_password.db_password[0].result
   
   vpc_security_group_ids = [aws_security_group.database[0].id]
