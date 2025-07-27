@@ -203,14 +203,13 @@ resource "aws_launch_template" "app" {
   }))
 }
 
-# Create Auo Scaling Group only if it doesn't exist
+# Create Auto Scaling Group only if it doesn't exist
 resource "aws_autoscaling_group" "app" {
   count               = length(data.aws_autoscaling_group.existing_app) == 0 ? 1 : 0
   name                = "${var.project_name}-asg"
   vpc_zone_identifier = local.subnet_ids
-  target_group_arns   = [data.aws_lb_target_group.app.arn]
   health_check_type   = "EC2"
-  health_check_grace_period = 300
+  health_check_grace_period = 600
   wait_for_capacity_timeout = "15m"
 
   min_size         = 0
