@@ -4,9 +4,18 @@ variable "aws_region" { type = string }
 variable "instance_type" { type = string }
 variable "min_instances" { type = number }
 variable "max_instances" { type = number }
-variable "enable_database" { type = bool; default = false }
-variable "database_type" { type = string; default = "postgres" }
-variable "database_instance_class" { type = string; default = "db.t3.micro" }
+variable "enable_database" {
+  type    = bool
+  default = false
+}
+variable "database_type" {
+  type    = string
+  default = "postgres"
+}
+variable "database_instance_class" {
+  type    = string
+  default = "db.t3.micro"
+}
 
 provider "aws" {
   region = var.aws_region
