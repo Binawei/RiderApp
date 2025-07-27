@@ -176,50 +176,32 @@ locals {
   instance_profile_name = length(data.aws_iam_role.existing_ec2_role) > 0 ? "${var.project_name}-ec2-profile" : aws_iam_instance_profile.ec2_profile[0].name
 }
 
-# Check if Auto Scaling Group exists
-data "aws_autoscaling_group" "existing_app" {
-  count = 1
-  name  = "${var.project_name}-asg"
-}
-
-# Launch Template
-resource "aws_launch_template" "app" {
-  count         = length(data.aws_autoscaling_group.existing_app) == 0 ? 1 : 0
-  name_prefix   = "${var.project_name}-"
-  image_id      = data.aws_ami.amazon_linux.id
-  instance_type = var.instance_type
-
+# Direct EC2 instances instead of problematic ASG
+resource "aws_instance" "app" {
+  count                  = 1
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = var.instance_type
+  subnet_id              = local.subnet_ids[0]
   vpc_security_group_ids = [aws_security_group.app.id]
-  iam_instance_profile {
-    name = local.instance_profile_name
-  }
+  iam_instance_profile   = local.instance_profile_name
 
-  user_data = base64encode(templatefile("${path.module}/user_data.sh", {
+  user_data = base64encode(templatefile("${path.module}/user_data_simple.sh", {
     project_name = var.project_name
-    app_type     = var.app_type
     aws_region   = var.aws_region
-    enable_database = var.enable_database
     ecr_registry = local.ecr_repository_url
   }))
+
+  tags = {
+    Name = "${var.project_name}-instance"
+  }
 }
 
-# Create Aufto Scaling Group only if it doesn't exist
-resource "aws_autoscaling_group" "app" {
-  count               = length(data.aws_autoscaling_group.existing_app) == 0 ? 1 : 0
-  name                = "${var.project_name}-asg"
-  vpc_zone_identifier = local.subnet_ids
-  health_check_type   = "EC2"
-  health_check_grace_period = 600
-  wait_for_capacity_timeout = "15m"
-
-  min_size         = 0
-  max_size         = var.max_instances
-  desired_capacity = 0
-
-  launch_template {
-    id      = aws_launch_template.app[0].id
-    version = "$Latest"
-  }
+# Register instance with target group
+resource "aws_lb_target_group_attachment" "app" {
+  count            = 1
+  target_group_arn = data.aws_lb_target_group.app.arn
+  target_id        = aws_instance.app[0].id
+  port             = 8080
 }
 
 # Target Group (use existing)
