@@ -21,7 +21,7 @@ yum install -y amazon-cloudwatch-agent
 mkdir -p /opt/${project_name}
 cd /opt/${project_name}
 
-# Configure Docker to use ECR (after creating directory)
+# Co#nfigure Docker to use ECR (after creating directory)
 aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_registry} || echo "ECR login failed, will retry later"
 
 # Create systemd service for the application
