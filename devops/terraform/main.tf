@@ -396,5 +396,5 @@ output "ecr_repository_url" {
 }
 
 output "database_endpoint" {
-  value = var.enable_database ? aws_db_instance.main[0].endpoint : null
+  value = local.db_endpoint
 }
