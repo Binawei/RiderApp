@@ -24,7 +24,7 @@ cd /opt/${project_name}
 # Configure Docker to use ECR (after creating directory)
 aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_registry} || echo "ECR login failed, will retry later"
 
-# Create systemd services for the application
+# Create systemd service for the application
 cat > /etc/systemd/system/${project_name}.service << EOF
 [Unit]
 Description=${project_name} Service
