@@ -42,47 +42,28 @@ locals {
   ecr_repository_url = length(data.aws_ecr_repository.existing_app) > 0 ? data.aws_ecr_repository.existing_app[0].repository_url : aws_ecr_repository.app[0].repository_url
 }
 
-# VPC and Networking (reusable)
-resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-  tags = { Name = "${var.project_name}-vpc" }
+# Use Default VPC (avoids VPC limit)
+data "aws_vpc" "default" {
+  default = true
 }
 
-resource "aws_subnet" "public" {
-  count             = 2
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.${count.index + 1}.0/24"
-  availability_zone = data.aws_availability_zones.available.names[count.index]
-  map_public_ip_on_launch = true
-  tags = { Name = "${var.project_name}-public-${count.index + 1}" }
-}
-
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
-  tags = { Name = "${var.project_name}-igw" }
-}
-
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
   }
-  tags = { Name = "${var.project_name}-public-rt" }
 }
 
-resource "aws_route_table_association" "public" {
-  count          = length(aws_subnet.public)
-  subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
+# Use existing default VPC resources
+locals {
+  vpc_id     = data.aws_vpc.default.id
+  subnet_ids = data.aws_subnets.default.ids
 }
 
 # Security Groups
 resource "aws_security_group" "app" {
   name_prefix = "${var.project_name}-app-"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
 
   dynamic "ingress" {
     for_each = var.app_type == "react-frontend" ? [80] : [8080]
@@ -122,7 +103,7 @@ resource "aws_lb" "main" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets            = aws_subnet.public[*].id
+  subnets            = local.subnet_ids
 }
 
 # Use existing or created Load Balancer
@@ -133,7 +114,7 @@ locals {
 
 resource "aws_security_group" "alb" {
   name_prefix = "${var.project_name}-alb-"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
 
   ingress {
     from_port   = 80
@@ -230,7 +211,7 @@ resource "aws_launch_template" "app" {
 
 resource "aws_autoscaling_group" "app" {
   name                = "${var.project_name}-asg"
-  vpc_zone_identifier = aws_subnet.public[*].id
+  vpc_zone_identifier = local.subnet_ids
   target_group_arns   = [data.aws_lb_target_group.app.arn]
   health_check_type   = "EC2"
   health_check_grace_period = 300
@@ -280,7 +261,7 @@ data "aws_ami" "amazon_linux" {
 resource "aws_db_subnet_group" "main" {
   count      = var.enable_database ? 1 : 0
   name       = "${var.project_name}-db-subnet-group-new"
-  subnet_ids = aws_subnet.public[*].id
+  subnet_ids = local.subnet_ids
   tags = { Name = "${var.project_name}-db-subnet-group-new" }
 }
 
@@ -288,7 +269,7 @@ resource "aws_db_subnet_group" "main" {
 resource "aws_security_group" "database" {
   count       = var.enable_database ? 1 : 0
   name_prefix = "${var.project_name}-db-"
-  vpc_id      = aws_vpc.main.id
+  vpc_id      = local.vpc_id
 
   ingress {
     from_port       = var.database_type == "postgres" ? 5432 : 3306
