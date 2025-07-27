@@ -176,7 +176,18 @@ locals {
   instance_profile_name = length(data.aws_iam_role.existing_ec2_role) > 0 ? "${var.project_name}-ec2-profile" : aws_iam_instance_profile.ec2_profile[0].name
 }
 
-# Direct EC2 instances instead of problematic ASG
+# SSH Key Pair for Ansible
+resource "aws_key_pair" "app" {
+  key_name   = "${var.project_name}-key"
+  public_key = tls_private_key.app.public_key_openssh
+}
+
+resource "tls_private_key" "app" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+# Direct EC2 instances with SSH access
 resource "aws_instance" "app" {
   count                  = 1
   ami                    = data.aws_ami.amazon_linux.id
@@ -184,6 +195,7 @@ resource "aws_instance" "app" {
   subnet_id              = local.subnet_ids[0]
   vpc_security_group_ids = [aws_security_group.app.id]
   iam_instance_profile   = local.instance_profile_name
+  key_name               = aws_key_pair.app.key_name
 
   user_data_base64 = base64encode(templatefile("${path.module}/user_data_simple.sh", {
     project_name = var.project_name
@@ -372,4 +384,9 @@ output "ecr_repository_url" {
 
 output "database_endpoint" {
   value = local.db_endpoint
+}
+
+output "ssh_private_key" {
+  value     = tls_private_key.app.private_key_pem
+  sensitive = true
 }
