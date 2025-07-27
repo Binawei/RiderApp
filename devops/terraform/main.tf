@@ -21,8 +21,14 @@ provider "aws" {
   region = var.aws_region
 }
 
-# ECR Repository
+# ECR Repository (use existing or create new)
+data "aws_ecr_repository" "app" {
+  name = var.project_name
+}
+
+# Create ECR repository if it doesn't exist
 resource "aws_ecr_repository" "app" {
+  count = 0  # Disabled since repository already exists
   name = var.project_name
   
   image_scanning_configuration {
@@ -177,7 +183,7 @@ resource "aws_launch_template" "app" {
     app_type     = var.app_type
     aws_region   = var.aws_region
     enable_database = var.enable_database
-    ecr_registry = aws_ecr_repository.app.repository_url
+    ecr_registry = data.aws_ecr_repository.app.repository_url
   }))
 }
 
@@ -268,7 +274,7 @@ resource "aws_db_instance" "main" {
   count                  = var.enable_database ? 1 : 0
   identifier             = "${var.project_name}-db"
   engine                 = var.database_type == "postgres" ? "postgres" : "mysql"
-  engine_version         = var.database_type == "postgres" ? "15.4" : "8.0"
+  engine_version         = var.database_type == "postgres" ? "15.7" : "8.0"
   instance_class         = var.database_instance_class
   allocated_storage      = 20
   max_allocated_storage  = 100
@@ -333,7 +339,7 @@ output "load_balancer_dns" {
 }
 
 output "ecr_repository_url" {
-  value = aws_ecr_repository.app.repository_url
+  value = data.aws_ecr_repository.app.repository_url
 }
 
 output "database_endpoint" {
