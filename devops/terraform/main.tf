@@ -177,6 +177,7 @@ resource "aws_launch_template" "app" {
     app_type     = var.app_type
     aws_region   = var.aws_region
     enable_database = var.enable_database
+    ecr_registry = aws_ecr_repository.app.repository_url
   }))
 }
 
