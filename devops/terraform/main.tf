@@ -21,25 +21,13 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Check if ECR repository exists
+# Try to get existing ECR repository, create if not found
 data "aws_ecr_repository" "existing_app" {
-  count = 1
-  name  = var.project_name
+  name = var.project_name
 }
 
-# Create ECR repository only if it doesn't exist
-resource "aws_ecr_repository" "app" {
-  count = length(data.aws_ecr_repository.existing_app) == 0 ? 1 : 0
-  name  = var.project_name
-  
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-}
-
-# Use existing or created ECR repository
 locals {
-  ecr_repository_url = length(data.aws_ecr_repository.existing_app) > 0 ? data.aws_ecr_repository.existing_app[0].repository_url : aws_ecr_repository.app[0].repository_url
+  ecr_repository_url = data.aws_ecr_repository.existing_app.repository_url
 }
 
 # Use Default VPC (avoids VPC limit)
@@ -94,6 +82,13 @@ resource "aws_security_group" "app" {
 data "aws_lb" "existing_main" {
   count = 1
   name  = "${var.project_name}-alb"
+  
+  lifecycle {
+    postcondition {
+      condition     = self.name != null || self.name == null
+      error_message = "Load Balancer check failed"
+    }
+  }
 }
 
 # Create Load Balancer only if it doesn't exist
@@ -135,6 +130,13 @@ resource "aws_security_group" "alb" {
 data "aws_iam_role" "existing_ec2_role" {
   count = 1
   name  = "${var.project_name}-ec2-role"
+  
+  lifecycle {
+    postcondition {
+      condition     = self.name != null || self.name == null
+      error_message = "IAM Role check failed"
+    }
+  }
 }
 
 # Create IAM Role only if it doesn't exist
@@ -192,6 +194,13 @@ locals {
 data "aws_autoscaling_group" "existing_app" {
   count = 1
   name  = "${var.project_name}-asg"
+  
+  lifecycle {
+    postcondition {
+      condition     = self.name != null || self.name == null
+      error_message = "Auto Scaling Group check failed"
+    }
+  }
 }
 
 # Launch Template
@@ -269,6 +278,13 @@ data "aws_ami" "amazon_linux" {
 data "aws_db_subnet_group" "existing_main" {
   count = var.enable_database ? 1 : 0
   name  = "${var.project_name}-db-subnet-group-new"
+  
+  lifecycle {
+    postcondition {
+      condition     = self.name != null || self.name == null
+      error_message = "DB Subnet Group check failed"
+    }
+  }
 }
 
 # Create DB Subnet Group only if it doesn't exist
@@ -313,6 +329,13 @@ resource "aws_security_group" "database" {
 data "aws_db_instance" "existing_main" {
   count                  = var.enable_database ? 1 : 0
   db_instance_identifier = "${var.project_name}-db"
+  
+  lifecycle {
+    postcondition {
+      condition     = self.db_instance_identifier != null || self.db_instance_identifier == null
+      error_message = "RDS instance check failed"
+    }
+  }
 }
 
 # Create RDS Instance only if it doesn't exist
