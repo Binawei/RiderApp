@@ -188,12 +188,18 @@ locals {
   instance_profile_name = length(data.aws_iam_role.existing_ec2_role) > 0 ? "${var.project_name}-ec2-profile" : aws_iam_instance_profile.ec2_profile[0].name
 }
 
-# Auto Scaling Group
+# Check if Auto Scaling Group exists
+data "aws_autoscaling_group" "existing_app" {
+  count = 1
+  name  = "${var.project_name}-asg"
+}
+
+# Launch Template
 resource "aws_launch_template" "app" {
+  count         = length(data.aws_autoscaling_group.existing_app) == 0 ? 1 : 0
   name_prefix   = "${var.project_name}-"
   image_id      = data.aws_ami.amazon_linux.id
   instance_type = var.instance_type
-  # key_name removed - instances will be managed via Systems Manager
 
   vpc_security_group_ids = [aws_security_group.app.id]
   iam_instance_profile {
@@ -209,7 +215,9 @@ resource "aws_launch_template" "app" {
   }))
 }
 
+# Create Auto Scaling Group only if it doesn't exist
 resource "aws_autoscaling_group" "app" {
+  count               = length(data.aws_autoscaling_group.existing_app) == 0 ? 1 : 0
   name                = "${var.project_name}-asg"
   vpc_zone_identifier = local.subnet_ids
   target_group_arns   = [data.aws_lb_target_group.app.arn]
@@ -217,12 +225,12 @@ resource "aws_autoscaling_group" "app" {
   health_check_grace_period = 300
   wait_for_capacity_timeout = "15m"
 
-  min_size         = 1  # Reduced for faster deployment
+  min_size         = 1
   max_size         = var.max_instances
-  desired_capacity = 1  # Start with 1 instance
+  desired_capacity = 1
 
   launch_template {
-    id      = aws_launch_template.app.id
+    id      = aws_launch_template.app[0].id
     version = "$Latest"
   }
 }
