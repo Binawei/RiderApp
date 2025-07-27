@@ -220,7 +220,7 @@ resource "aws_instance" "app" {
   }
 }
 
-# Targets group attachment handled in workflow to avoid VPC issues
+# Target group attachment handled in workflow to avoid VPC issues
 
 # Target Group (use  existing)
 data "aws_lb_target_group" "app" {
