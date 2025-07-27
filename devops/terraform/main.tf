@@ -21,19 +21,25 @@ provider "aws" {
   region = var.aws_region
 }
 
-# ECR Repository (use existing or create new)
-data "aws_ecr_repository" "app" {
-  name = var.project_name
+# Check if ECR repository exists
+data "aws_ecr_repository" "existing_app" {
+  count = 1
+  name  = var.project_name
 }
 
-# Create ECR repository if it doesn't exist
+# Create ECR repository only if it doesn't exist
 resource "aws_ecr_repository" "app" {
-  count = 0  # Disabled since repository already exists
-  name = var.project_name
+  count = length(data.aws_ecr_repository.existing_app) == 0 ? 1 : 0
+  name  = var.project_name
   
   image_scanning_configuration {
     scan_on_push = true
   }
+}
+
+# Use existing or created ECR repository
+locals {
+  ecr_repository_url = length(data.aws_ecr_repository.existing_app) > 0 ? data.aws_ecr_repository.existing_app[0].repository_url : aws_ecr_repository.app[0].repository_url
 }
 
 # VPC and Networking (reusable)
@@ -103,9 +109,26 @@ resource "aws_security_group" "app" {
   }
 }
 
-# Load Balancer (use existing)
-data "aws_lb" "main" {
-  name = "${var.project_name}-alb"
+# Check if Load Balancer exists
+data "aws_lb" "existing_main" {
+  count = 1
+  name  = "${var.project_name}-alb"
+}
+
+# Create Load Balancer only if it doesn't exist
+resource "aws_lb" "main" {
+  count              = length(data.aws_lb.existing_main) == 0 ? 1 : 0
+  name               = "${var.project_name}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = aws_subnet.public[*].id
+}
+
+# Use existing or created Load Balancer
+locals {
+  load_balancer_arn = length(data.aws_lb.existing_main) > 0 ? data.aws_lb.existing_main[0].arn : aws_lb.main[0].arn
+  load_balancer_dns = length(data.aws_lb.existing_main) > 0 ? data.aws_lb.existing_main[0].dns_name : aws_lb.main[0].dns_name
 }
 
 resource "aws_security_group" "alb" {
@@ -127,20 +150,53 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# IAM Role (use existing)
-data "aws_iam_role" "ec2_role" {
-  name = "${var.project_name}-ec2-role"
+# Check if IAM Role exists
+data "aws_iam_role" "existing_ec2_role" {
+  count = 1
+  name  = "${var.project_name}-ec2-role"
 }
 
-# IAM Role Policy (use existing)
-data "aws_iam_role_policy" "parameter_store_policy" {
-  name = "${var.project_name}-parameter-store-policy"
-  role = data.aws_iam_role.ec2_role.name
+# Create IAM Role only if it doesn't exist
+resource "aws_iam_role" "ec2_role" {
+  count = length(data.aws_iam_role.existing_ec2_role) == 0 ? 1 : 0
+  name  = "${var.project_name}-ec2-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
+  })
 }
 
-# IAM Instance Profile (use existing)
-data "aws_iam_instance_profile" "ec2_profile" {
-  name = "${var.project_name}-ec2-profile"
+resource "aws_iam_role_policy" "parameter_store_policy" {
+  count = length(data.aws_iam_role.existing_ec2_role) == 0 ? 1 : 0
+  name  = "${var.project_name}-parameter-store-policy"
+  role  = aws_iam_role.ec2_role[0].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath"
+      ]
+      Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${var.project_name}/*"
+    }]
+  })
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  count = length(data.aws_iam_role.existing_ec2_role) == 0 ? 1 : 0
+  name  = "${var.project_name}-ec2-profile"
+  role  = length(data.aws_iam_role.existing_ec2_role) > 0 ? data.aws_iam_role.existing_ec2_role[0].name : aws_iam_role.ec2_role[0].name
+}
+
+# Use existing or created IAM Instance Profile
+locals {
+  instance_profile_name = length(data.aws_iam_role.existing_ec2_role) > 0 ? "${var.project_name}-ec2-profile" : aws_iam_instance_profile.ec2_profile[0].name
 }
 
 # Auto Scaling Group
@@ -152,7 +208,7 @@ resource "aws_launch_template" "app" {
 
   vpc_security_group_ids = [aws_security_group.app.id]
   iam_instance_profile {
-    name = data.aws_iam_instance_profile.ec2_profile.name
+    name = local.instance_profile_name
   }
 
   user_data = base64encode(templatefile("${path.module}/user_data.sh", {
@@ -160,7 +216,7 @@ resource "aws_launch_template" "app" {
     app_type     = var.app_type
     aws_region   = var.aws_region
     enable_database = var.enable_database
-    ecr_registry = data.aws_ecr_repository.app.repository_url
+    ecr_registry = local.ecr_repository_url
   }))
 }
 
@@ -186,7 +242,7 @@ data "aws_lb_target_group" "app" {
 }
 
 resource "aws_lb_listener" "app" {
-  load_balancer_arn = data.aws_lb.main.arn
+  load_balancer_arn = local.load_balancer_arn
   port              = "80"
   protocol          = "HTTP"
 
@@ -304,11 +360,11 @@ resource "aws_ssm_parameter" "db_password" {
 
 # Outputs
 output "load_balancer_dns" {
-  value = data.aws_lb.main.dns_name
+  value = local.load_balancer_dns
 }
 
 output "ecr_repository_url" {
-  value = data.aws_ecr_repository.app.repository_url
+  value = local.ecr_repository_url
 }
 
 output "database_endpoint" {
