@@ -2,7 +2,7 @@
 [staging]
 # Add your staging server IPs here
 # staging-1 ansible_host=10.0.1.10 ansible_user=ec2-user
-#
+
 [production]
 # Add your production server IPs here  
 # prod-1 ansible_host=10.0.2.10 ansible_user=ec2-user
