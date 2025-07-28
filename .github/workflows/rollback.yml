@@ -1,0 +1,37 @@
+name: Rollback RiderApp
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollback_type:
+        description: 'Type of rollback'
+        required: true
+        type: choice
+        options:
+          - 'application'
+          - 'infrastructure'
+          - 'database'
+          - 'full'
+      target_commit:
+        description: 'Target commit SHA for application rollback (leave empty for previous)'
+        required: false
+        type: string
+      confirm_rollback:
+        description: 'Type "CONFIRM" to proceed with rollback'
+        required: true
+        type: string
+
+jobs:
+  rollback:
+    uses: Binawei/DevOpsPipeline/.github/workflows/rollback.yml@main
+    with:
+      project_name: "riderapp"
+      app_type: "java-spring-boot"
+      aws_region: "us-east-1"
+      rollback_type: ${{ github.event.inputs.rollback_type }}
+      target_commit: ${{ github.event.inputs.target_commit }}
+      confirm_rollback: ${{ github.event.inputs.confirm_rollback }}
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
