@@ -34,13 +34,9 @@ provider "aws" {
   region = var.aws_region
 }
 
-# ECR Repository
-resource "aws_ecr_repository" "app" {
+# ECR Repository (use existing)
+data "aws_ecr_repository" "app" {
   name = var.project_name
-  
-  image_scanning_configuration {
-    scan_on_push = true
-  }
 }
 
 # VPC and Networking
