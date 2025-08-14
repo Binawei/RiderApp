@@ -39,7 +39,7 @@ data "aws_ecr_repository" "app" {
   name = var.project_name
 }
 
-# Hardcode all values - let pipeline handle ECS entirely
+# Hardcode all values - let pigpeline handle ECS entirely
 locals {
   load_balancer_dns = "riderapp-alb-305274337.us-east-1.elb.amazonaws.com"
   ecs_cluster_name  = "${var.project_name}-cluster"
