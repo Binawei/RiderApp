@@ -98,15 +98,6 @@ resource "aws_security_group" "ecs_tasks" {
   tags = { Name = "${var.project_name}-ecs-tasks" }
 }
 
-# Load Balancer
-resource "aws_lb" "main" {
-  name               = "${var.project_name}-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = aws_subnet.public[*].id
-}
-
 resource "aws_security_group" "alb" {
   name_prefix = "${var.project_name}-alb-"
   vpc_id      = aws_vpc.main.id
@@ -126,6 +117,38 @@ resource "aws_security_group" "alb" {
   }
 }
 
+# Load Balancer
+resource "aws_lb" "main" {
+  name               = "${var.project_name}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = aws_subnet.public[*].id
+}
+
+# Target Group
+resource "aws_lb_target_group" "app" {
+  name     = "${var.project_name}-tg"
+  port     = 8080
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+
+  health_check {
+    path = "/actuator/health"
+  }
+}
+
+resource "aws_lb_listener" "app" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
+}
+
 # ECS Cluster
 resource "aws_ecs_cluster" "main" {
   name = "${var.project_name}-cluster"
@@ -136,6 +159,76 @@ resource "aws_ecs_cluster" "main" {
   }
   
   tags = { Name = "${var.project_name}-cluster" }
+}
+
+# CloudWatch Log Group
+resource "aws_cloudwatch_log_group" "app" {
+  name              = "/ecs/${var.project_name}"
+  retention_in_days = 7
+  
+  tags = { Name = "${var.project_name}-logs" }
+}
+
+# IAM Roles for ECS
+resource "aws_iam_role" "ecs_execution_role" {
+  name = "${var.project_name}-ecs-execution-role"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
+  role       = aws_iam_role.ecs_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy" "ecs_execution_ssm_policy" {
+  count = var.enable_database ? 1 : 0
+  name  = "${var.project_name}-ecs-execution-ssm-policy"
+  role  = aws_iam_role.ecs_execution_role.id
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameters",
+          "ssm:GetParameter"
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:*:parameter/${var.project_name}/database/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role" "ecs_task_role" {
+  name = "${var.project_name}-ecs-task-role"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
 }
 
 # ECS Task Definition
@@ -217,104 +310,6 @@ resource "aws_ecs_service" "app" {
   depends_on = [aws_lb_listener.app]
   
   tags = { Name = "${var.project_name}-service" }
-}
-
-# Target Group
-resource "aws_lb_target_group" "app" {
-  name     = "${var.project_name}-tg"
-  port     = 8080
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-
-  health_check {
-    path = "/actuator/health"
-  }
-}
-
-resource "aws_lb_listener" "app" {
-  load_balancer_arn = aws_lb.main.arn
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.app.arn
-  }
-}
-
-# Data sources
-data "aws_availability_zones" "available" {
-  state = "available"
-}
-
-# CloudWatch Log Group
-resource "aws_cloudwatch_log_group" "app" {
-  name              = "/ecs/${var.project_name}"
-  retention_in_days = 7
-  
-  tags = { Name = "${var.project_name}-logs" }
-}
-
-# IAM Roles for ECS
-resource "aws_iam_role" "ecs_execution_role" {
-  name = "${var.project_name}-ecs-execution-role"
-  
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
-  role       = aws_iam_role.ecs_execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-resource "aws_iam_role_policy" "ecs_execution_ssm_policy" {
-  count = var.enable_database ? 1 : 0
-  name  = "${var.project_name}-ecs-execution-ssm-policy"
-  role  = aws_iam_role.ecs_execution_role.id
-  
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:GetParameters",
-          "ssm:GetParameter"
-        ]
-        Resource = [
-          "arn:aws:ssm:${var.aws_region}:*:parameter/${var.project_name}/database/*"
-        ]
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role" "ecs_task_role" {
-  name = "${var.project_name}-ecs-task-role"
-  
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
-  })
 }
 
 # Database resources (if enabled)
@@ -412,68 +407,9 @@ resource "aws_ssm_parameter" "db_password" {
   overwrite = true
 }
 
-# Outputs
-output "load_balancer_dns" {
-  value = aws_lb.main.dns_name
-}
-
-output "ecr_repository_url" {
-  value = data.aws_ecr_repository.app.repository_url
-}
-
-output "ecs_cluster_name" {
-  value = aws_ecs_cluster.main.name
-}
-
-output "ecs_service_name" {
-  value = aws_ecs_service.app.name
-}
-
-output "database_endpoint" {
-  value = var.enable_database ? aws_db_instance.main[0].endpoint : null
-} = "sun:04:00-sun:05:00"
-  
-  skip_final_snapshot = true
-  deletion_protection = false
-  
-  tags = {
-    Name = "${var.project_name}-database"
-  }
-}
-
-resource "random_password" "db_password" {
-  count   = var.enable_database ? 1 : 0
-  length  = 16
-  special = true
-}
-
-# Store DB credentials in Parameter Store
-resource "aws_ssm_parameter" "db_host" {
-  count = var.enable_database ? 1 : 0
-  name  = "/${var.project_name}/database/host"
-  type  = "String"
-  value = aws_db_instance.main[0].endpoint
-}
-
-resource "aws_ssm_parameter" "db_name" {
-  count = var.enable_database ? 1 : 0
-  name  = "/${var.project_name}/database/name"
-  type  = "String"
-  value = aws_db_instance.main[0].db_name
-}
-
-resource "aws_ssm_parameter" "db_username" {
-  count = var.enable_database ? 1 : 0
-  name  = "/${var.project_name}/database/username"
-  type  = "String"
-  value = aws_db_instance.main[0].username
-}
-
-resource "aws_ssm_parameter" "db_password" {
-  count = var.enable_database ? 1 : 0
-  name  = "/${var.project_name}/database/password"
-  type  = "SecureString"
-  value = random_password.db_password[0].result
+# Data sources
+data "aws_availability_zones" "available" {
+  state = "available"
 }
 
 # Outputs
