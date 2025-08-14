@@ -201,6 +201,18 @@ resource "aws_lb_target_group" "fargate" {
   }
 }
 
+# Create listener to attach target group to ALB
+resource "aws_lb_listener" "fargate" {
+  load_balancer_arn = data.aws_lb.existing.arn
+  port              = "8080"
+  protocol          = "HTTP"
+  
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.fargate.arn
+  }
+}
+
 
 
 # ECS Cluster - always manage
@@ -280,7 +292,7 @@ resource "aws_ecs_service" "app" {
     container_port   = 8080
   }
   
-
+  depends_on = [aws_lb_listener.fargate]
   
   lifecycle {
     ignore_changes = [task_definition, desired_count]
