@@ -34,48 +34,12 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Only use ECR data source (this works)
+# Only use ECR data source
 data "aws_ecr_repository" "app" {
   name = var.project_name
 }
 
-# Create initial task definition for pipeline to update
-resource "aws_ecs_task_definition" "app" {
-  family                   = var.project_name
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"
-  memory                   = "512"
-  execution_role_arn       = "arn:aws:iam::964191654598:role/riderapp-ecs-execution-role"
-  task_role_arn           = "arn:aws:iam::964191654598:role/riderapp-ecs-task-role"
-
-  container_definitions = jsonencode([
-    {
-      name  = var.project_name
-      image = var.image_uri
-      
-      portMappings = [
-        {
-          containerPort = 8080
-          protocol      = "tcp"
-        }
-      ]
-      
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = "/ecs/${var.project_name}"
-          "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix" = "ecs"
-        }
-      }
-      
-      essential = true
-    }
-  ])
-}
-
-# Hardcode outputs since we can't read ECS resources
+# Hardcode all values - let pipeline handle ECS entirely
 locals {
   load_balancer_dns = "riderapp-alb-305274337.us-east-1.elb.amazonaws.com"
   ecs_cluster_name  = "${var.project_name}-cluster"
