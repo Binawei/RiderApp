@@ -34,7 +34,7 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Only use ECR data source
+# Onnly use ECR data source
 data "aws_ecr_repository" "app" {
   name = var.project_name
 }
