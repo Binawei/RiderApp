@@ -254,11 +254,12 @@ resource "aws_ecs_service" "app" {
     assign_public_ip = true
   }
   
-  load_balancer {
-    target_group_arn = data.aws_lb_target_group.fargate.arn
-    container_name   = var.project_name
-    container_port   = 8080
-  }
+  # Remove load balancer block - causing the hang due to target type mismatch
+  # load_balancer {
+  #   target_group_arn = data.aws_lb_target_group.fargate.arn
+  #   container_name   = var.project_name
+  #   container_port   = 8080
+  # }
   
   lifecycle {
     ignore_changes = [task_definition, desired_count]
