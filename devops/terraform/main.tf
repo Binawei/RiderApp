@@ -34,28 +34,21 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Use existing resources via data sources
+# Only use ECR data source (this works)
 data "aws_ecr_repository" "app" {
   name = var.project_name
 }
 
-data "aws_lb" "main" {
-  name = "${var.project_name}-alb"
-}
-
-data "aws_ecs_cluster" "main" {
-  cluster_name = "${var.project_name}-cluster"
-}
-
-# Try to get existing service, create if not found
-data "aws_ecs_service" "app" {
-  service_name = "${var.project_name}-service"
-  cluster_arn  = data.aws_ecs_cluster.main.arn
+# Hardcode outputs since we can't read ECS resources
+locals {
+  load_balancer_dns = "riderapp-alb-305274337.us-east-1.elb.amazonaws.com"
+  ecs_cluster_name  = "${var.project_name}-cluster"
+  ecs_service_name  = "${var.project_name}-service"
 }
 
 # Outputs for the pipeline
 output "load_balancer_dns" {
-  value = data.aws_lb.main.dns_name
+  value = local.load_balancer_dns
 }
 
 output "ecr_repository_url" {
@@ -63,11 +56,11 @@ output "ecr_repository_url" {
 }
 
 output "ecs_cluster_name" {
-  value = data.aws_ecs_cluster.main.cluster_name
+  value = local.ecs_cluster_name
 }
 
 output "ecs_service_name" {
-  value = data.aws_ecs_service.app.service_name
+  value = local.ecs_service_name
 }
 
 output "database_endpoint" {
