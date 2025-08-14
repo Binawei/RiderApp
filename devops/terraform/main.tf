@@ -1,10 +1,34 @@
-variable "project_name" { type = string }
-variable "app_type" { type = string }
-variable "aws_region" { type = string }
-variable "enable_database" { type = bool; default = false }
-variable "database_type" { type = string; default = "postgres" }
-variable "database_instance_class" { type = string; default = "db.t3.micro" }
-variable "image_uri" { type = string; description = "Docker image URI for ECS task" }
+variable "project_name" {
+  type = string
+}
+
+variable "app_type" {
+  type = string
+}
+
+variable "aws_region" {
+  type = string
+}
+
+variable "enable_database" {
+  type    = bool
+  default = false
+}
+
+variable "database_type" {
+  type    = string
+  default = "postgres"
+}
+
+variable "database_instance_class" {
+  type    = string
+  default = "db.t3.micro"
+}
+
+variable "image_uri" {
+  type        = string
+  description = "Docker image URI for ECS task"
+}
 
 provider "aws" {
   region = var.aws_region
@@ -347,6 +371,70 @@ resource "aws_db_instance" "main" {
   backup_retention_period = 7
   backup_window          = "03:00-04:00"
   maintenance_window     = "sun:04:00-sun:05:00"
+  
+  skip_final_snapshot = true
+  deletion_protection = false
+  
+  tags = {
+    Name = "${var.project_name}-database"
+  }
+}
+
+resource "random_password" "db_password" {
+  count   = var.enable_database ? 1 : 0
+  length  = 16
+  special = true
+}
+
+# Store DB credentials in Parameter Store
+resource "aws_ssm_parameter" "db_host" {
+  count = var.enable_database ? 1 : 0
+  name  = "/${var.project_name}/database/host"
+  type  = "String"
+  value = aws_db_instance.main[0].endpoint
+}
+
+resource "aws_ssm_parameter" "db_name" {
+  count = var.enable_database ? 1 : 0
+  name  = "/${var.project_name}/database/name"
+  type  = "String"
+  value = aws_db_instance.main[0].db_name
+}
+
+resource "aws_ssm_parameter" "db_username" {
+  count = var.enable_database ? 1 : 0
+  name  = "/${var.project_name}/database/username"
+  type  = "String"
+  value = aws_db_instance.main[0].username
+}
+
+resource "aws_ssm_parameter" "db_password" {
+  count = var.enable_database ? 1 : 0
+  name  = "/${var.project_name}/database/password"
+  type  = "SecureString"
+  value = random_password.db_password[0].result
+}
+
+# Outputs
+output "load_balancer_dns" {
+  value = aws_lb.main.dns_name
+}
+
+output "ecr_repository_url" {
+  value = aws_ecr_repository.app.repository_url
+}
+
+output "ecs_cluster_name" {
+  value = aws_ecs_cluster.main.name
+}
+
+output "ecs_service_name" {
+  value = aws_ecs_service.app.name
+}
+
+output "database_endpoint" {
+  value = var.enable_database ? aws_db_instance.main[0].endpoint : null
+}ce_window     = "sun:04:00-sun:05:00"
   
   skip_final_snapshot = true
   deletion_protection = false
