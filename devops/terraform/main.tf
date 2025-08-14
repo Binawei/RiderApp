@@ -44,8 +44,8 @@ resource "aws_ecs_task_definition" "app" {
   family                   = var.project_name
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = 256
-  memory                   = 512
+  cpu                      = "256"
+  memory                   = "512"
   execution_role_arn       = "arn:aws:iam::964191654598:role/riderapp-ecs-execution-role"
   task_role_arn           = "arn:aws:iam::964191654598:role/riderapp-ecs-task-role"
 
@@ -73,8 +73,6 @@ resource "aws_ecs_task_definition" "app" {
       essential = true
     }
   ])
-  
-  tags = { Name = "${var.project_name}-task-definition" }
 }
 
 # Hardcode outputs since we can't read ECS resources
