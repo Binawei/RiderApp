@@ -171,53 +171,17 @@ resource "aws_security_group" "ecs_tasks" {
   }
 }
 
-# ALB - always manage
-resource "aws_lb" "main" {
-  name               = "${var.project_name}-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = local.subnet_ids
-  
-  tags = {
-    Name = "${var.project_name}-alb"
-  }
+# Use existing ALB as data source
+data "aws_lb" "existing" {
+  name = "${var.project_name}-alb"
 }
 
-resource "aws_lb_target_group" "app" {
-  name        = "${var.project_name}-tg"
-  port        = 8080
-  protocol    = "HTTP"
-  vpc_id      = local.vpc_id
-  target_type = "ip"
-  
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = "/"
-    port                = "traffic-port"
-    protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
-  }
-  
-  tags = {
-    Name = "${var.project_name}-tg"
-  }
+# Use existing target group as data source
+data "aws_lb_target_group" "existing" {
+  name = "${var.project_name}-tg"
 }
 
-resource "aws_lb_listener" "app" {
-  load_balancer_arn = aws_lb.main.arn
-  port              = "80"
-  protocol          = "HTTP"
-  
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.app.arn
-  }
-}
+
 
 # ECS Cluster - always manage
 resource "aws_ecs_cluster" "main" {
@@ -228,13 +192,9 @@ resource "aws_ecs_cluster" "main" {
   }
 }
 
-resource "aws_cloudwatch_log_group" "app" {
-  name              = "/ecs/${var.project_name}"
-  retention_in_days = 7
-  
-  tags = {
-    Name = "${var.project_name}-logs"
-  }
+# Use existing log group as data source
+data "aws_cloudwatch_log_group" "existing" {
+  name = "/ecs/${var.project_name}"
 }
 
 # ECS Task Definition - always update
@@ -261,7 +221,7 @@ resource "aws_ecs_task_definition" "app" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.app.name
+          "awslogs-group"         = data.aws_cloudwatch_log_group.existing.name
           "awslogs-region"        = var.aws_region
           "awslogs-stream-prefix" = "ecs"
         }
@@ -295,12 +255,12 @@ resource "aws_ecs_service" "app" {
   }
   
   load_balancer {
-    target_group_arn = aws_lb_target_group.app.arn
+    target_group_arn = data.aws_lb_target_group.existing.arn
     container_name   = var.project_name
     container_port   = 8080
   }
   
-  depends_on = [aws_lb_listener.app]
+
   
   lifecycle {
     ignore_changes = [task_definition, desired_count]
@@ -339,7 +299,7 @@ data "aws_ecr_repository" "app" {
 
 # Outputs
 output "load_balancer_dns" {
-  value = aws_lb.main.dns_name
+  value = data.aws_lb.existing.dns_name
 }
 
 output "ecr_repository_url" {
