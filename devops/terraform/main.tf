@@ -34,18 +34,24 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Check for existing infrastructure
-data "aws_vpc" "existing" {
+# Check for existing infrastructure with error handling
+data "aws_vpcs" "existing" {
   filter {
     name   = "tag:Name"
     values = ["${var.project_name}-vpc"]
   }
 }
 
+data "aws_vpc" "main" {
+  count = length(data.aws_vpcs.existing.ids) > 0 ? 1 : 0
+  id    = data.aws_vpcs.existing.ids[0]
+}
+
 data "aws_subnets" "existing" {
+  count = length(data.aws_vpcs.existing.ids) > 0 ? 1 : 0
   filter {
     name   = "vpc-id"
-    values = [local.vpc_id]
+    values = [data.aws_vpc.main[0].id]
   }
   filter {
     name   = "tag:Name"
@@ -53,20 +59,10 @@ data "aws_subnets" "existing" {
   }
 }
 
-data "aws_lb" "existing" {
-  name = "${var.project_name}-alb"
-}
-
-data "aws_ecs_cluster" "existing" {
-  cluster_name = "${var.project_name}-cluster"
-}
-
 locals {
-  vpc_exists     = try(data.aws_vpc.existing.id, null) != null
-  cluster_exists = try(data.aws_ecs_cluster.existing.arn, null) != null
-  alb_exists     = try(data.aws_lb.existing.arn, null) != null
-  vpc_id         = local.vpc_exists ? data.aws_vpc.existing.id : aws_vpc.main[0].id
-  subnet_ids     = length(data.aws_subnets.existing.ids) > 0 ? data.aws_subnets.existing.ids : aws_subnet.public[*].id
+  vpc_exists = length(data.aws_vpcs.existing.ids) > 0
+  vpc_id     = local.vpc_exists ? data.aws_vpc.main[0].id : aws_vpc.main[0].id
+  subnet_ids = local.vpc_exists && length(data.aws_subnets.existing) > 0 ? data.aws_subnets.existing[0].ids : aws_subnet.public[*].id
 }
 
 # Create VPC only if it doesn't exist
@@ -175,9 +171,8 @@ resource "aws_security_group" "ecs_tasks" {
   }
 }
 
-# ALB - create only if doesn't exist
+# ALB - always manage
 resource "aws_lb" "main" {
-  count              = local.alb_exists ? 0 : 1
   name               = "${var.project_name}-alb"
   internal           = false
   load_balancer_type = "application"
@@ -214,8 +209,7 @@ resource "aws_lb_target_group" "app" {
 }
 
 resource "aws_lb_listener" "app" {
-  count             = local.alb_exists ? 0 : 1
-  load_balancer_arn = local.alb_exists ? data.aws_lb.existing.arn : aws_lb.main[0].arn
+  load_balancer_arn = aws_lb.main.arn
   port              = "80"
   protocol          = "HTTP"
   
@@ -225,10 +219,9 @@ resource "aws_lb_listener" "app" {
   }
 }
 
-# ECS Cluster - create only if doesn't exist
+# ECS Cluster - always manage
 resource "aws_ecs_cluster" "main" {
-  count = local.cluster_exists ? 0 : 1
-  name  = "${var.project_name}-cluster"
+  name = "${var.project_name}-cluster"
   
   tags = {
     Name = "${var.project_name}-cluster"
@@ -287,10 +280,10 @@ resource "aws_ecs_task_definition" "app" {
   }
 }
 
-# ECS Service - create only if doesn't exist
+# ECS Service - always manage
 resource "aws_ecs_service" "app" {
   name            = "${var.project_name}-service"
-  cluster         = local.cluster_exists ? data.aws_ecs_cluster.existing.arn : aws_ecs_cluster.main[0].id
+  cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = 1
   launch_type     = "FARGATE"
@@ -346,7 +339,7 @@ data "aws_ecr_repository" "app" {
 
 # Outputs
 output "load_balancer_dns" {
-  value = local.alb_exists ? data.aws_lb.existing.dns_name : aws_lb.main[0].dns_name
+  value = aws_lb.main.dns_name
 }
 
 output "ecr_repository_url" {
@@ -354,7 +347,7 @@ output "ecr_repository_url" {
 }
 
 output "ecs_cluster_name" {
-  value = local.cluster_exists ? data.aws_ecs_cluster.existing.cluster_name : aws_ecs_cluster.main[0].name
+  value = aws_ecs_cluster.main.name
 }
 
 output "ecs_service_name" {
