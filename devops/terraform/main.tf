@@ -240,34 +240,10 @@ resource "aws_ecs_task_definition" "app" {
   }
 }
 
-# ECS Service - always manage
-resource "aws_ecs_service" "app" {
-  name            = "${var.project_name}-service"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.app.arn
-  desired_count   = 1
-  launch_type     = "FARGATE"
-  
-  network_configuration {
-    security_groups  = [aws_security_group.ecs_tasks.id]
-    subnets          = local.subnet_ids
-    assign_public_ip = true
-  }
-  
-  # Remove load balancer block - causing the hang due to target type mismatch
-  # load_balancer {
-  #   target_group_arn = data.aws_lb_target_group.fargate.arn
-  #   container_name   = var.project_name
-  #   container_port   = 8080
-  # }
-  
-  lifecycle {
-    ignore_changes = [task_definition, desired_count]
-  }
-  
-  tags = {
-    Name = "${var.project_name}-service"
-  }
+# Use existing ECS service as data source
+data "aws_ecs_service" "app" {
+  service_name = "${var.project_name}-service"
+  cluster_arn  = aws_ecs_cluster.main.arn
 }
 
 # Use existing IAM role
@@ -293,7 +269,7 @@ output "ecs_cluster_name" {
 }
 
 output "ecs_service_name" {
-  value = aws_ecs_service.app.name
+  value = data.aws_ecs_service.app.service_name
 }
 
 output "database_endpoint" {
