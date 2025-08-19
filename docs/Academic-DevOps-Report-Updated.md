@@ -181,6 +181,206 @@ resource "aws_ecs_service" "app" {
   name            = "${var.project_name}-service"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
+  desired_count   = 2
+  launch_type     = "FARGATE"
+}
+```
+
+---
+
+## 3. Implementation Challenges and Solutions
+
+### 3.1 Compute Service Selection Challenge: EC2 vs ECS
+
+One of the primary architectural decisions involved selecting the appropriate AWS compute service for containerized application deployment. This decision required careful evaluation of EC2 and ECS options based on operational complexity, scalability requirements, and maintenance overhead.
+
+#### 3.1.1 Decision Matrix Analysis
+
+**EC2 Container Deployment Considerations:**
+- **Advantages**: Full control over underlying infrastructure, custom configurations, cost optimization for predictable workloads
+- **Disadvantages**: Manual cluster management, patching responsibilities, complex auto-scaling setup, higher operational overhead
+
+**ECS Fargate Deployment Considerations:**
+- **Advantages**: Serverless container orchestration, automatic scaling, no infrastructure management, built-in service discovery
+- **Disadvantages**: Higher per-task cost, limited customization options, vendor lock-in
+
+#### 3.1.2 Final Decision Rationale
+
+ECS Fargate was selected based on the following criteria:
+1. **Reduced Operational Complexity**: Eliminates server management and patching requirements
+2. **Automatic Scaling**: Built-in horizontal scaling based on CPU/memory metrics
+3. **Integration Benefits**: Native integration with AWS services (ALB, CloudWatch, Parameter Store)
+4. **Development Focus**: Allows team to focus on application development rather than infrastructure management
+
+This decision aligns with cloud-native principles and supports the project's goal of implementing a fully automated DevOps pipeline (Fowler, 2016).
+
+### 3.2 Infrastructure as Code Implementation Challenges
+
+The Terraform implementation phase encountered several critical challenges that required systematic resolution and demonstrated the complexity of Infrastructure as Code deployment.
+
+#### 3.2.1 Terraform Syntax and Configuration Errors
+
+**Challenge 1: HCL Syntax Violations**
+
+The initial Terraform configuration contained syntax errors that prevented successful initialization:
+
+```
+Error: Invalid character
+on main.tf line 4, in variable "enable_database":
+variable "enable_database" { type = bool; default = false }
+The ";" character is not valid. Use newlines to separate arguments and blocks
+```
+
+**Root Cause Analysis:**
+The error stemmed from incorrect HCL (HashiCorp Configuration Language) syntax, specifically using semicolons instead of newlines for argument separation. This highlighted the learning curve associated with Terraform's declarative syntax.
+
+**Solution Implementation:**
+```hcl
+# Incorrect syntax
+variable "enable_database" { type = bool; default = false }
+
+# Corrected syntax
+variable "enable_database" {
+  type    = bool
+  default = false
+}
+```
+
+**Challenge 2: Resource Attribute Misplacement**
+
+Multiple errors occurred due to incorrect resource attribute placement:
+
+```
+Error: Unsupported argument
+on main.tf line 413:
+skip_final_snapshot = true
+An argument named "skip_final_snapshot" is not expected here.
+```
+
+**Solution:**
+The attributes were incorrectly placed outside the proper resource block. The resolution involved restructuring the RDS configuration:
+
+```hcl
+resource "aws_db_instance" "main" {
+  allocated_storage      = 20
+  storage_type          = "gp2"
+  engine                = "mysql"
+  engine_version        = "8.0"
+  instance_class        = "db.t3.micro"
+  skip_final_snapshot   = true
+  deletion_protection   = false
+  
+  tags = {
+    Name = "${var.project_name}-database"
+  }
+}
+```
+
+#### 3.2.2 AWS Resource State Management Challenges
+
+**Challenge 3: Resource Already Exists Conflicts**
+
+Multiple deployment attempts resulted in resource conflict errors:
+
+```
+Error: creating ECR Repository (riderapp): RepositoryAlreadyExistsException: 
+The repository with name 'riderapp' already exists in the registry
+
+Error: ELBv2 Load Balancer (riderapp-alb) already exists
+
+Error: creating ECS Cluster (riderapp-cluster): operation error ECS: CreateCluster
+```
+
+**Root Cause Analysis:**
+These errors occurred due to:
+1. **State File Inconsistency**: Terraform state file was not properly tracking existing resources
+2. **Resource Naming Conflicts**: Previous failed deployments left orphaned resources
+3. **Lack of Import Strategy**: No mechanism to import existing resources into Terraform state
+
+**Solution Strategy:**
+```bash
+# Import existing resources into Terraform state
+terraform import aws_ecr_repository.app riderapp
+terraform import aws_lb.main arn:aws:elasticloadbalancing:us-east-1:964191654598:loadbalancer/app/riderapp-alb/...
+
+# Alternative: Destroy and recreate with proper state management
+terraform destroy -target=aws_ecr_repository.app
+terraform apply
+```
+
+#### 3.2.3 IAM Permissions and Security Challenges
+
+**Challenge 4: Insufficient IAM Permissions**
+
+The most critical error involved inadequate IAM permissions for the CI/CD pipeline:
+
+```
+Error: creating ECS Cluster (riderapp-cluster): AccessDeniedException: 
+User: arn:aws:iam::964191654598:user/devops-pipeline-user is not authorized 
+to perform: ecs:CreateCluster because no identity-based policy allows the 
+ecs:CreateCluster action
+```
+
+**Root Cause Analysis:**
+The IAM user configured for the GitHub Actions pipeline lacked comprehensive ECS permissions. This highlighted the complexity of AWS IAM policy management and the principle of least privilege implementation.
+
+**Solution Implementation:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecs:CreateCluster",
+        "ecs:DescribeCluster",
+        "ecs:UpdateCluster",
+        "ecs:DeleteCluster",
+        "ecs:RegisterTaskDefinition",
+        "ecs:CreateService",
+        "ecs:UpdateService",
+        "ecs:DescribeServices"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### 3.3 Learning Outcomes and Best Practices
+
+#### 3.3.1 Terraform Development Best Practices
+
+The challenges encountered led to the adoption of several best practices:
+
+1. **Syntax Validation**: Implement `terraform validate` in CI/CD pipeline
+2. **State Management**: Use remote state storage with state locking
+3. **Resource Import Strategy**: Develop procedures for importing existing resources
+4. **Modular Configuration**: Break large configurations into reusable modules
+
+#### 3.3.2 IAM Security Framework
+
+The permission errors highlighted the need for a structured IAM approach:
+
+1. **Policy Testing**: Use AWS IAM Policy Simulator for permission validation
+2. **Least Privilege Implementation**: Grant minimal required permissions initially
+3. **Permission Auditing**: Regular review of IAM policies and access patterns
+4. **Role-Based Access**: Prefer IAM roles over user-based access where possible
+
+### 3.4 Resolution Impact on Project Timeline
+
+The challenges encountered resulted in significant learning opportunities but impacted the project timeline:
+
+- **Initial Timeline**: 2 weeks for infrastructure deployment
+- **Actual Timeline**: 4 weeks including troubleshooting and resolution
+- **Knowledge Gained**: Deep understanding of Terraform, AWS IAM, and ECS architecture
+- **Process Improvement**: Established robust testing and validation procedures
+
+These challenges, while initially frustrating, provided valuable hands-on experience with real-world DevOps implementation complexities and reinforced the importance of thorough testing and incremental deployment strategies (Kim et al., 2016).
+
+---
+
+## 4. Results and Discussionn = aws_ecs_task_definition.app.arn
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
   
@@ -583,9 +783,7 @@ Security is implemented as a cross-cutting concern throughout the pipeline (NIST
 
 **[PLACEHOLDER: Screenshot - Figure 2.15: IAM Roles and Policies Configuration]**
 
----
 
-## 3. Results and Discussion
 
 ### 3.1 Pipeline Implementation Results
 
