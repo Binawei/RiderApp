@@ -35,4 +35,4 @@ build/
 
 ### Academic Reports ###
 docs/*
-!docs/deployment-system-guide.md
+!docs/ECS-Deployment-System-Guide.md
